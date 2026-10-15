@@ -1,0 +1,14 @@
+names:
+- '0'
+- '1'
+- '3'
+nc: 3
+roboflow:
+  license: CC BY 4.0
+  project: fire-smoke-human-pfvce-stq4p
+  url: https://universe.roboflow.com/b23dccn836_nguyen-dinh-tra/fire-smoke-human-pfvce-stq4p/dataset/1
+  version: 1
+  workspace: b23dccn836_nguyen-dinh-tra
+test: ../test/images
+train: ../train/images
+val: ../valid/images
