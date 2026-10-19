@@ -1,3 +1,6 @@
-ultralytics
-opencv-python
-roboflow
+ultralytics>=8.3.0
+opencv-python>=4.8.0
+numpy
+requests
+PyYAML
+Flask>=2.3

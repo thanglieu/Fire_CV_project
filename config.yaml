@@ -1,0 +1,85 @@
+# =====================================================================
+#  CẤU HÌNH HỆ THỐNG PHÁT HIỆN CHÁY
+# =====================================================================
+
+camera:
+  name: "Camera 1"
+  # Nguồn video. Ví dụ:
+  #   Android - app "IP Webcam":   "http://192.168.1.50:8080/video"
+  #   Android/iPhone - app "DroidCam": "http://192.168.1.50:4747/video"
+  #   Camera RTSP:                 "rtsp://user:pass@192.168.1.50:554/stream"
+  #   Webcam gắn máy tính:         0
+  #   File video để test:          "test.mp4"
+  source: "http://192.168.1.100:4747/video"
+  reconnect_delay: 3        # giây chờ trước khi thử kết nối lại
+  loop_video: true          # nếu source là file video: tự phát lại từ đầu
+
+model:
+  path: "models/best.pt"
+  imgsz: 640
+  device: "auto"            # "auto" | "cpu" | "0" (GPU NVIDIA đầu tiên)
+  half: true                # FP16 - chỉ có tác dụng khi chạy GPU
+  process_fps: 5            # số khung hình/giây đưa vào AI (giảm nếu máy yếu)
+
+# Tên class trong model của bạn: fire, human, smoke
+detection:
+  fire_conf: 0.50           # ngưỡng tin cậy tối thiểu cho "fire"
+  smoke_conf: 0.50          # ngưỡng tin cậy tối thiểu cho "smoke"
+  human_conf: 0.50          # chỉ dùng để vẽ khung (không gây báo động)
+  draw_human: true
+  # Class nào được phép gây báo động? Thêm "smoke" nếu muốn báo cả khi có khói.
+  alert_classes: ["fire"]
+
+# Chống báo động giả: phải thấy lửa ít nhất `min_hits` lần trong `window_seconds` giây
+alert:
+  window_seconds: 5
+  min_hits: 8               # ~1.6 giây liên tục ở 5 fps
+  cooldown_seconds: 120     # sau khi báo, im lặng bao lâu rồi mới báo lại nếu vẫn cháy
+  save_snapshots: true
+  keep_last_snapshots: 200
+  camera_offline_alert_seconds: 60   # mất camera quá lâu -> gửi cảnh báo (0 = tắt)
+
+# ---------------------------------------------------------------------
+#  KÊNH GỬI TIN ĐẾN ĐIỆN THOẠI NGOÀI MẠNG LAN (đi qua Internet)
+# ---------------------------------------------------------------------
+# --- ZALO (Zalo Bot Platform: https://bot.zapps.me) - chỉ gửi chữ, không kèm ảnh ---
+zalo:
+  enabled: false
+  bot_token: "YOUR_ZALO_BOT_TOKEN"
+  chat_ids: ["YOUR_ZALO_CHAT_ID"]
+
+# --- TELEGRAM (có kèm ảnh lúc phát hiện cháy) ---
+telegram:
+  enabled: false
+  # Có thể thay bằng biến môi trường TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
+  bot_token: "YOUR_BOT_TOKEN"
+  chat_ids: ["YOUR_CHAT_ID"]   # có thể nhiều người / nhiều nhóm
+  send_photo: true
+
+# --- DISCORD: tạo webhook trong kênh (Cài đặt kênh > Tích hợp > Webhooks) - gửi kèm ảnh ---
+discord:
+  enabled: false
+  webhook_url: "https://discord.com/api/webhooks/...."
+
+# --- EMAIL (Gmail: bật xác minh 2 bước rồi tạo "Mật khẩu ứng dụng" 16 ký tự) - gửi kèm ảnh ---
+email:
+  enabled: true
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 465
+  username: "nguyendinhtratl2005@gmail.com"
+  password: "dyez gutd jsfu ived"
+  to: ["nguyendinhtratl9c@gmail.com"]
+
+# --- NTFY: không cần tài khoản, gửi kèm ảnh (ảnh giữ 3 giờ). Cài app "ntfy" trên điện thoại ---
+# Tuỳ chọn thêm (không cần tài khoản): app "ntfy" trên điện thoại, subscribe đúng topic
+ntfy:
+  enabled: false
+  server: "https://ntfy.sh"
+  topic: "doi-ten-topic-nay-thanh-chuoi-bi-mat-cua-ban"
+
+# Trang web xem camera trực tiếp trên mạng LAN: http://<IP-máy-tính>:5000
+web:
+  enabled: true
+  host: "0.0.0.0"
+  port: 5000
+  max_width: 960
