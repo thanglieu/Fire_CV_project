@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FireGuard – Giám sát cháy thông minh</title>
+<style>
+  :root{
+    --bg:#0b0f17; --surface:#121826; --surface-2:#182033; --border:#222c42;
+    --text:#e6e9f0; --muted:#8b95a9;
+    --ok:#22c55e; --warn:#f59e0b; --danger:#ef4444; --accent:#ff6a3d;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:
+       radial-gradient(1200px 500px at 15% -10%,#1d2a4a55,transparent),var(--bg);
+       color:var(--text);min-height:100vh}
+  a{color:inherit;text-decoration:none}
+
+  /* ---------- Header ---------- */
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+         padding:16px clamp(16px,3vw,32px);border-bottom:1px solid var(--border);
+         background:#0b0f17cc;backdrop-filter:blur(8px);position:sticky;top:0;z-index:10}
+  .brand{display:flex;align-items:center;gap:12px}
+  .brand .logo{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-size:22px;
+               background:linear-gradient(135deg,var(--accent),#ff2d55);box-shadow:0 6px 20px #ff4d3d55}
+  .brand h1{font-size:18px;letter-spacing:.3px}
+  .brand small{color:var(--muted);font-size:12px}
+  .pills{display:flex;gap:8px;flex-wrap:wrap}
+  .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;font-size:13px;
+        background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .pill.ok .dot{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .pill.bad .dot{background:var(--danger);box-shadow:0 0 8px var(--danger)}
+  .pill.ok{color:var(--text)} .pill.bad{color:#fecaca}
+
+  /* ---------- Layout ---------- */
+  main{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;
+       padding:20px clamp(16px,3vw,32px);max-width:1800px;margin:0 auto}
+  @media (max-width:1100px){ main{grid-template-columns:1fr} }
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .card-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;
+             border-bottom:1px solid var(--border);font-weight:600;font-size:15px}
+
+  /* ---------- Khung video (lớn, tự co theo màn hình) ---------- */
+  #videoCard{transition:box-shadow .2s,border-color .2s}
+  #videoCard.alarm{border-color:var(--danger);animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 #ef444466}50%{box-shadow:0 0 0 10px #ef444400}}
+  /* --ar được JS cập nhật theo tỉ lệ thật của camera (4:3, 16:9...) => khung luôn lấp đầy, không có viền đen */
+  .video-wrap{--ar:1.7778;position:relative;background:#000;aspect-ratio:var(--ar);
+              width:min(100%,calc((100vh - 200px) * var(--ar)));margin:0 auto}
+  .video-wrap:fullscreen{width:100%;height:100%;aspect-ratio:auto}
+  .video-wrap img{width:100%;height:100%;object-fit:contain;display:block}
+  .overlay{position:absolute;left:12px;right:12px;display:flex;justify-content:space-between;gap:8px;pointer-events:none}
+  .overlay.top{top:12px} .overlay.bottom{bottom:12px}
+  .chip{pointer-events:auto;background:#000a;backdrop-filter:blur(4px);border:1px solid #ffffff22;
+        color:#fff;font-size:12px;padding:6px 10px;border-radius:8px;display:inline-flex;align-items:center;gap:6px}
+  .live::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--danger);animation:blink 1.2s infinite}
+  @keyframes blink{50%{opacity:.2}}
+  button.chip{cursor:pointer;font:inherit;font-size:12px} button.chip:hover{background:#000d}
+  #banner{display:none;margin:14px 18px 0;padding:12px 16px;border-radius:12px;font-weight:600;
+          background:#ef444422;border:1px solid var(--danger);color:#fecaca}
+  #banner.show{display:block}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;padding:14px 18px;color:var(--muted);font-size:13px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+
+  /* ---------- Sidebar ---------- */
+  aside{display:flex;flex-direction:column;gap:20px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .stat{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px}
+  .stat b{display:block;font-size:26px;line-height:1.1}
+  .stat span{color:var(--muted);font-size:12px}
+  .stat.hot b{color:var(--danger)}
+  .alert-list{display:flex;flex-direction:column;max-height:calc(100vh - 360px);min-height:200px;overflow:auto}
+  .alert-item{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);transition:background .15s}
+  .alert-item:last-child{border-bottom:0}
+  .alert-item:hover{background:var(--surface-2)}
+  .alert-item img{width:84px;height:56px;object-fit:cover;border-radius:8px;background:#000;border:1px solid var(--border);flex:none}
+  .alert-item .info{flex:1;min-width:0;font-size:13px}
+  .alert-item .when{font-weight:600}
+  .alert-item .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .bar{height:6px;border-radius:99px;background:#ffffff14;margin-top:7px;overflow:hidden}
+  .bar>div{height:100%;background:linear-gradient(90deg,var(--warn),var(--danger))}
+  .empty{padding:36px 16px;text-align:center;color:var(--muted);font-size:14px}
+  .empty .ico{font-size:34px;display:block;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">🔥</div>
+    <div><h1>FireGuard</h1><small>Giám sát &amp; cảnh báo cháy tự động</small></div>
+  </div>
+  <div class="pills">
+    <span class="pill" id="pCam"><i class="dot"></i><span>Camera…</span></span>
+    <span class="pill" id="pAi"><i class="dot"></i><span>AI…</span></span>
+    <span class="pill"><i class="dot"></i><span id="clock">--:--:--</span></span>
+  </div>
+</header>
+
+<main>
+  <!-- ===== Video trực tiếp ===== -->
+  <section class="card" id="videoCard">
+    <div class="card-head"><span>Camera trực tiếp · DroidCam</span><span class="pill" id="pFps"><span>-- fps</span></span></div>
+    <div class="video-wrap" id="videoWrap">
+      <img id="video" src="{% url 'video_feed' %}" alt="Camera stream">
+      <div class="overlay top">
+        <span class="chip live">LIVE</span>
+        <button class="chip" id="btnFull" type="button">⛶ Toàn màn hình</button>
+      </div>
+    </div>
+    <div id="banner">🚨 PHÁT HIỆN LỬA / KHÓI – hãy kiểm tra hiện trường ngay!</div>
+    <div class="legend">
+      <span><i style="background:#ef4444"></i>Lửa (fire)</span>
+      <span><i style="background:#b4b4b4"></i>Khói (smoke)</span>
+      <span><i style="background:#00c800"></i>Người (human)</span>
+    </div>
+  </section>
+
+  <!-- ===== Thống kê + lịch sử ===== -->
+  <aside>
+    <div class="stats" id="stats">
+      <div class="stat hot"><b>{{ today_alerts }}</b><span>Hôm nay</span></div>
+      <div class="stat"><b>{{ total_alerts }}</b><span>Tổng cảnh báo</span></div>
+      <div class="stat"><b id="sInfer">--</b><span>ms / lần AI</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">Lịch sử cảnh báo gần đây</div>
+      <div class="alert-list" id="alertList">
+        {% for alert in recent_alerts %}
+        <a class="alert-item" href="{{ alert.image_evidence.url }}" target="_blank" rel="noopener">
+          <img src="{{ alert.image_evidence.url }}" alt="Ảnh cảnh báo" loading="lazy">
+          <div class="info">
+            <div class="when">{{ alert.timestamp|date:"H:i:s · d/m/Y" }}</div>
+            {% widthratio alert.confidence 1 100 as pct %}
+            <div class="sub">Độ tin cậy {{ pct }}%</div>
+            <div class="bar"><div style="width:{{ pct }}%"></div></div>
+          </div>
+        </a>
+        {% empty %}
+        <div class="empty"><span class="ico">✅</span>Chưa có cảnh báo nào được ghi nhận.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const video = $('video'), card = $('videoCard');
+  const FEED = video.getAttribute('src');
+
+  // Đồng hồ
+  setInterval(() => $('clock').textContent = new Date().toLocaleTimeString('vi-VN'), 1000);
+
+  // Toàn màn hình
+  $('btnFull').onclick = () => {
+    const el = $('videoWrap');
+    document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen && el.requestFullscreen();
+  };
+
+  // Tự nối lại luồng video nếu bị đứt (server khởi động lại, mạng chập chờn...)
+  video.onerror = () => setTimeout(() => { video.src = FEED + '?t=' + Date.now(); }, 2000);
+
+  function setPill(el, ok, text) {
+    el.className = 'pill ' + (ok ? 'ok' : 'bad');
+    el.lastElementChild.textContent = text;
+  }
+
+  // Làm mới danh sách cảnh báo khi có cảnh báo mới (không reload video)
+  let lastAlerts = null;
+  async function refreshAlerts() {
+    try {
+      const html = await (await fetch(location.href, {cache: 'no-store'})).text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      $('alertList').innerHTML = doc.getElementById('alertList').innerHTML;
+      const fresh = doc.querySelectorAll('#stats .stat b');
+      const mine = document.querySelectorAll('#stats .stat b');
+      if (fresh[0]) mine[0].textContent = fresh[0].textContent;
+      if (fresh[1]) mine[1].textContent = fresh[1].textContent;
+    } catch (e) {}
+  }
+
+  // Khớp tỉ lệ khung với camera thật
+  function fitRatio() {
+    if (video.naturalWidth > 0) {
+      $('videoWrap').style.setProperty('--ar', (video.naturalWidth / video.naturalHeight).toFixed(4));
+    }
+  }
+  video.addEventListener('load', fitRatio);
+
+  // Hỏi trạng thái mỗi giây
+  async function poll() {
+    try {
+      const s = await (await fetch('{% url "stream_status" %}', {cache: 'no-store'})).json();
+      setPill($('pCam'), s.connected, s.connected ? 'Camera đang kết nối' : 'Mất kết nối camera');
+      setPill($('pAi'), true, s.detected.length ? 'AI: ' + s.detected.join(', ') : 'AI: bình thường');
+      $('pFps').firstElementChild.textContent = s.fps + ' fps';
+      $('sInfer').textContent = s.infer_ms;
+      card.classList.toggle('alarm', s.fire);
+      $('banner').classList.toggle('show', s.fire);
+      if (lastAlerts !== null && s.alerts_sent > lastAlerts) refreshAlerts();
+      lastAlerts = s.alerts_sent;
+      fitRatio();
+    } catch (e) {
+      setPill($('pCam'), false, 'Không liên lạc được server');
+    }
+  }
+  poll(); setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>
