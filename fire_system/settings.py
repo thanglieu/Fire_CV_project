@@ -13,20 +13,42 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env')
+
+
+def env_bool(name, default):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {'1', 'true', 'yes', 'on'}:
+        return True
+    if normalized in {'0', 'false', 'no', 'off'}:
+        return False
+    raise ValueError(f"{name} must be a boolean value, got {value!r}")
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-m-5q^vb&s1z9*=c0jp=gv=fr4*$*r*hcdy+#=45+^3g=k5-!4v'
-
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env_bool('DJANGO_DEBUG', True)
 
-ALLOWED_HOSTS = []
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '').strip()
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ValueError('DJANGO_SECRET_KEY must be configured when DJANGO_DEBUG is False.')
+    SECRET_KEY = 'django-insecure-local-development-only-change-before-deploy'
+
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+    if host.strip()
+]
 
 
 # Application definition
@@ -104,9 +126,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = os.environ.get('DJANGO_LANGUAGE_CODE', 'en-us')
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = os.environ.get('DJANGO_TIME_ZONE', 'UTC')
 
 USE_I18N = True
 
@@ -120,19 +142,58 @@ STATIC_URL = 'static/'
 
 
 # Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+# Configure these environment variables before starting Django.
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend',
+)
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '465'))
+EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', True)
+EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', False)
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '20'))
+ALERT_EMAIL_SENDER = os.environ.get('ALERT_EMAIL_SENDER', '').strip()
+EMAIL_HOST_USER = ALERT_EMAIL_SENDER
+EMAIL_HOST_PASSWORD = os.environ.get('ALERT_EMAIL_PASSWORD', '').replace(' ', '')
+DEFAULT_FROM_EMAIL = ALERT_EMAIL_SENDER
+ALERT_EMAIL_RECEIVER = os.environ.get('ALERT_EMAIL_RECEIVER', '').strip()
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
+DROIDCAM_URL = os.environ.get('DROIDCAM_URL', 'http://192.168.1.101:4747/video')
+FIRE_MODEL_PATH = BASE_DIR / os.environ.get('FIRE_MODEL_PATH', 'model_ai/best.pt')
+FIRE_DETECTION_CONFIDENCE = float(
+    os.environ.get('FIRE_DETECTION_CONFIDENCE', '0.5')
+)
+FIRE_DETECTION_IMAGE_SIZE = int(os.environ.get('FIRE_DETECTION_IMAGE_SIZE', '480'))
+FIRE_ALERT_LABELS = {
+    label.strip().lower()
+    for label in os.environ.get('FIRE_ALERT_LABELS', 'fire,smoke').split(',')
+    if label.strip()
 }
+FIRE_ALERT_COOLDOWN_SECONDS = float(
+    os.environ.get('FIRE_ALERT_COOLDOWN_SECONDS', '30')
+)
+CAMERA_INFER_FPS = float(os.environ.get('CAMERA_INFER_FPS', '5'))
+CAMERA_STREAM_FPS = float(os.environ.get('CAMERA_STREAM_FPS', '30'))
+CAMERA_JPEG_QUALITY = int(os.environ.get('CAMERA_JPEG_QUALITY', '75'))
+CAMERA_MAX_WIDTH = int(os.environ.get('CAMERA_MAX_WIDTH', '960'))
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+media_root = Path(os.environ.get('MEDIA_ROOT', str(BASE_DIR / 'media')))
+MEDIA_ROOT = str(media_root if media_root.is_absolute() else BASE_DIR / media_root)
 
-
-# cài đặt email
-ALERT_EMAIL_SENDER = "nguyendinhtratl2005@gmail.com"
-ALERT_EMAIL_PASSWORD = "dyez gutd jsfu ived"
-ALERT_EMAIL_RECEIVER = "nguyendinhtratl9c@gmail.com"
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'alert_app': {
+            'handlers': ['console'],
+            'level': os.environ.get('APP_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+    },
+}

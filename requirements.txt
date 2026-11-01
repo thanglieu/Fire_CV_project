@@ -1,5 +1,7 @@
 ultralytics>=8.3.0
 opencv-python>=4.8.0
+Django>=6.1
+python-dotenv>=1.0
 numpy
 requests
 PyYAML

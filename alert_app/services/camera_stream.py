@@ -8,7 +8,6 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-DEFAULT_SOURCE = "http://192.168.1.102:4747/video"
 COLORS = {"fire": (0, 0, 255), "smoke": (180, 180, 180), "human": (0, 200, 0)}
 
 
@@ -56,8 +55,16 @@ class CameraStream:
                 from .alerting import handle_fire_alert
                 from .detector import FireDetector
 
-                inst = cls(source=getattr(settings, "DROIDCAM_URL", DEFAULT_SOURCE),
-                           detector=FireDetector.get_instance(), on_alert=handle_fire_alert)
+                inst = cls(
+                    source=settings.DROIDCAM_URL,
+                    detector=FireDetector.get_instance(),
+                    on_alert=handle_fire_alert,
+                    cooldown=settings.FIRE_ALERT_COOLDOWN_SECONDS,
+                    infer_fps=settings.CAMERA_INFER_FPS,
+                    stream_fps=settings.CAMERA_STREAM_FPS,
+                    jpeg_quality=settings.CAMERA_JPEG_QUALITY,
+                    max_width=settings.CAMERA_MAX_WIDTH,
+                )
                 inst.start()
                 cls._instance = inst
             return cls._instance
