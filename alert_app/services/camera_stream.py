@@ -6,6 +6,8 @@ import time
 import cv2
 import numpy as np
 
+from .preprocessing import FramePreprocessor
+
 log = logging.getLogger(__name__)
 
 COLORS = {"fire": (0, 0, 255), "smoke": (180, 180, 180), "human": (0, 200, 0)}
@@ -19,7 +21,8 @@ class CameraStream:
                  infer_fps=5.0, stream_fps=30.0, jpeg_quality=75, max_width=960):
         self.source = int(source) if str(source).strip().isdigit() else source
         self.detector = detector
-        self.on_alert = on_alert                       # hàm(annotated_frame, max_conf)
+        self.preprocessor = FramePreprocessor()
+        self.on_alert = on_alert                    # hàm(annotated_frame, max_conf)
         self.alert_names = set(alert_names or getattr(detector, "alert_names", None) or [])
         self.cooldown = cooldown
         self.infer_interval = 1.0 / infer_fps
@@ -128,9 +131,12 @@ class CameraStream:
                 continue
             last_seq = seq
             try:
-                dets = self.detector.detect(frame)
+                # Bước 2: Tiền xử lý frame
+                prepared = self.preprocessor.process(frame, seq)
+                # Bước 3: Đưa frame đã chuẩn bị vào YOLO
+                dets = self.detector.detect(prepared.image)
             except Exception:
-                log.exception("Lỗi khi chạy YOLO")
+                log.exception("Lỗi khi tiền xử lý frame hoặc chạy YOLO")
                 time.sleep(1)
                 continue
             now = time.time()
