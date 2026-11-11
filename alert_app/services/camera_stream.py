@@ -15,10 +15,12 @@ class CameraStream:
     _instance = None
     _instance_lock = threading.Lock()
 
-    def __init__(self, source, detector, on_alert=None, alert_names=None, cooldown=30.0,
-                 infer_fps=5.0, stream_fps=30.0, jpeg_quality=75, max_width=960):
+    def __init__(self, source, detector=None, on_alert=None, alert_names=None, cooldown=30.0,
+                 infer_fps=5.0, stream_fps=30.0, jpeg_quality=75, max_width=960,
+                 detector_factory=None, ai_enabled=True):
         self.source = int(source) if str(source).strip().isdigit() else source
         self.detector = detector
+        self._detector_factory = detector_factory      # hàm nạp model, chạy ở luồng AI (không chặn video)
         self.on_alert = on_alert                       # hàm(annotated_frame, max_conf)
         self.alert_names = set(alert_names or getattr(detector, "alert_names", None) or [])
         self.cooldown = cooldown
@@ -38,6 +40,12 @@ class CameraStream:
         self._cond = threading.Condition()
 
         self.connected = False
+        self.kind = "camera"          # camera | video
+        self.camera_url = self.source # địa chỉ camera gần nhất (để quay lại từ chế độ video)
+        self.ai_enabled = ai_enabled  # False = không chạy YOLO, chỉ chuyển tiếp hình
+        self.ai_loading = False
+        self.ai_error = ""
+        self._gen = 0                 # tăng mỗi lần đổi nguồn -> luồng đọc tự mở lại nguồn mới
         self.alerts_sent = 0
         self._fps = 0.0
         self._infer_ms = 0.0
@@ -57,7 +65,8 @@ class CameraStream:
 
                 inst = cls(
                     source=settings.DROIDCAM_URL,
-                    detector=FireDetector.get_instance(),
+                    detector_factory=FireDetector.get_instance,   # nạp model ở luồng AI, video hiện ngay
+                    ai_enabled=settings.AI_DEFAULT_ENABLED,
                     on_alert=handle_fire_alert,
                     cooldown=settings.FIRE_ALERT_COOLDOWN_SECONDS,
                     infer_fps=settings.CAMERA_INFER_FPS,
@@ -79,10 +88,67 @@ class CameraStream:
     def stop(self):
         self._stop.set()
 
+    def set_source(self, source, kind="camera"):
+        """Đổi nguồn đầu vào: kind = 'camera' (DroidCam/URL) hoặc 'video' (file video)."""
+        source = int(source) if str(source).strip().isdigit() else source
+        if kind == "camera" and self.kind == "camera" and source == self.source and self.connected:
+            return                                    # đang kết nối đúng nguồn này rồi
+        with self._frame_lock:
+            self.source, self.kind = source, kind
+            if kind == "camera":
+                self.camera_url = source
+            self._gen += 1
+            self._frame = None
+        self._dets = ([], 0.0)
+        self.connected = False
+        self._last_alert = 0.0                        # nguồn mới được báo động ngay
+
+    def set_ai(self, enabled):
+        """Bật/tắt YOLO. Tắt thì luồng AI nghỉ hẳn (không tốn CPU/GPU), video vẫn chạy bình thường."""
+        self.ai_enabled = bool(enabled)
+        if self.ai_enabled:
+            self.ai_error = ""
+        else:
+            self._dets = ([], 0.0)
+
+    def _load_detector(self):
+        """Nạp model ở luồng AI để không chặn video. Trả True nếu đã có detector."""
+        if self.detector is not None:
+            return True
+        if self._detector_factory is None:
+            self.ai_enabled = False
+            return False
+        self.ai_loading, self.ai_error = True, ""
+        try:
+            self.detector = self._detector_factory()
+            self.alert_names = set(getattr(self.detector, "alert_names", None) or [])
+            return True
+        except Exception as exc:
+            log.exception("Không nạp được model AI")
+            self.ai_error = f"{type(exc).__name__}: {exc}"[:200]
+            self.ai_enabled = False                   # bấm "Chạy AI" để thử lại sau khi sửa lỗi
+            return False
+        finally:
+            self.ai_loading = False
+
+    @staticmethod
+    def _open(source):
+        """Mở nguồn; với địa chỉ mạng thì đặt timeout 5s để IP sai không treo luồng đọc quá lâu."""
+        if isinstance(source, str) and source.lower().startswith(("http://", "https://", "rtsp://")):
+            try:
+                return cv2.VideoCapture(source, cv2.CAP_FFMPEG, [
+                    cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000,
+                    cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000,
+                ])
+            except Exception:                         # OpenCV cũ không có tham số này
+                pass
+        return cv2.VideoCapture(source)
+
     # ------------------------------------------------------------------ luồng 1: đọc camera
     def _reader(self):
         while not self._stop.is_set():
-            cap = cv2.VideoCapture(self.source)
+            gen, source, kind = self._gen, self.source, self.kind
+            cap = self._open(source)
             try:
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             except Exception:
@@ -90,28 +156,49 @@ class CameraStream:
             if not cap.isOpened():
                 self.connected = False
                 cap.release()
-                log.warning("Không mở được camera %s, thử lại sau 2s", self.source)
-                self._stop.wait(2)
+                log.warning("Không mở được nguồn %s, thử lại sau 2s", source)
+                self._wait(2, gen)
                 continue
-            log.info("Đã kết nối camera %s", self.source)
+            log.info("Đã mở nguồn %s (%s)", source, kind)
+            delay = 0.0
+            if kind == "video":                         # file video: phát đúng tốc độ gốc
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                delay = 1.0 / fps if fps and fps > 1 else 1.0 / 25
             fails = 0
-            while not self._stop.is_set():
-                ok, frame = cap.read()          # chặn tới khi có khung mới, luôn đọc hết tốc độ
+            while not self._stop.is_set() and gen == self._gen:
+                t0 = time.time()
+                ok, frame = cap.read()                  # chặn tới khi có khung mới
                 if not ok or frame is None:
                     fails += 1
+                    if kind == "video":
+                        if fails > 3:                   # đọc không nổi nữa
+                            break
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)   # hết video -> phát lại từ đầu
+                        continue
                     if fails > 30:
                         break
                     time.sleep(0.02)
                     continue
                 fails = 0
                 with self._frame_lock:
+                    if gen != self._gen:                # nguồn vừa bị đổi, bỏ khung này
+                        break
                     self._frame, self._seq = frame, self._seq + 1
                 self._last_frame_t = time.time()
                 self.connected = True
+                if delay:
+                    time.sleep(max(0.0, delay - (time.time() - t0)))
             cap.release()
             self.connected = False
-            log.warning("Mất kết nối camera, đang kết nối lại...")
-            self._stop.wait(1)
+            if gen == self._gen:                        # mất nguồn thật (không phải do đổi nguồn)
+                log.warning("Mất kết nối nguồn, đang kết nối lại...")
+                self._wait(1, gen)
+
+    def _wait(self, seconds, gen):
+        """Chờ nhưng thức dậy ngay nếu người dùng vừa đổi nguồn."""
+        end = time.time() + seconds
+        while time.time() < end and not self._stop.is_set() and gen == self._gen:
+            time.sleep(0.05)
 
     def _latest(self):
         with self._frame_lock:
@@ -122,6 +209,13 @@ class CameraStream:
         last_seq = -1
         while not self._stop.is_set():
             t0 = time.time()
+            if not self.ai_enabled:                   # AI đang tắt: nghỉ, không tốn CPU/GPU
+                self._dets, self._infer_ms, last_seq = ([], 0.0), 0.0, -1
+                time.sleep(0.2)
+                continue
+            if self.detector is None and not self._load_detector():
+                continue
+            gen = self._gen
             frame, seq = self._latest()
             if frame is None or seq == last_seq:
                 time.sleep(0.01)
@@ -132,6 +226,9 @@ class CameraStream:
             except Exception:
                 log.exception("Lỗi khi chạy YOLO")
                 time.sleep(1)
+                continue
+
+            if gen != self._gen:                      # nguồn đã đổi khi đang suy luận
                 continue
             now = time.time()
             self._dets = (dets, now)
@@ -227,6 +324,11 @@ class CameraStream:
         dets, dt = self._dets
         names = {d[0] for d in dets} if time.time() - dt < 2 else set()
         return {
+            "mode": self.kind,
+            "camera_url": self.camera_url,
+            "ai_enabled": self.ai_enabled,
+            "ai_loading": self.ai_loading,
+            "ai_error": self.ai_error,
             "connected": self.connected and time.time() - self._last_frame_t < 2,
             "fps": round(self._fps, 1),
             "infer_ms": int(self._infer_ms),

@@ -1,5 +1,5 @@
 # alert_app/services/alerting.py
-"""Xử lý khi có báo động: lưu ảnh, ghi DB, gửi email (chạy ở luồng riêng để không làm khựng video)."""
+"""Xử lý khi có báo động: lưu ảnh, ghi DB, gửi thông báo (chạy ở luồng riêng để không làm khựng video)."""
 import logging
 import threading
 import time
@@ -35,10 +35,10 @@ def handle_fire_alert(annotated_frame, max_conf):
 
     log.warning("PHÁT HIỆN CHÁY (%.2f) - đã lưu %s", max_conf, filename)
 
-    from .notifier import send_fire_alert_email
+    from .notifier import send_fire_alert
 
     threading.Thread(
-        target=send_fire_alert_email,
+        target=send_fire_alert,
         args=(str(image_path), max_conf),
         daemon=True,
     ).start()

@@ -65,6 +65,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'alert_app.middleware.DashboardBasicAuthMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -158,6 +159,35 @@ EMAIL_HOST_PASSWORD = os.environ.get('ALERT_EMAIL_PASSWORD', '').replace(' ', ''
 DEFAULT_FROM_EMAIL = ALERT_EMAIL_SENDER
 ALERT_EMAIL_RECEIVER = os.environ.get('ALERT_EMAIL_RECEIVER', '').strip()
 
+# NGROK
+ALERT_CHANNELS = [c.strip().lower() for c in os.environ.get('ALERT_CHANNELS', 'telegram').split(',') if c.strip()]
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '').strip()
+TELEGRAM_TIMEOUT = int(os.environ.get('TELEGRAM_TIMEOUT', '20'))
+PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', '').strip().rstrip('/')
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', PUBLIC_BASE_URL).split(',') if o.strip()
+]
+DASHBOARD_USER = os.environ.get('DASHBOARD_USER', '').strip()
+DASHBOARD_PASSWORD = os.environ.get('DASHBOARD_PASSWORD', '')
+
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '').strip()
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '').strip()
+VAPID_SUBJECT = os.environ.get('VAPID_SUBJECT', '').strip() or PUBLIC_BASE_URL or 'mailto:admin@example.com'
+WEBPUSH_TTL = int(os.environ.get('WEBPUSH_TTL', '3600'))
+NTFY_SERVER = os.environ.get('NTFY_SERVER', 'https://ntfy.sh').strip().rstrip('/')
+NTFY_TOPIC = os.environ.get('NTFY_TOPIC', '').strip()
+NTFY_TOKEN = os.environ.get('NTFY_TOKEN', '').strip()        # chỉ cần nếu dùng server ntfy riêng có đăng nhập
+PUSHOVER_APP_TOKEN = os.environ.get('PUSHOVER_APP_TOKEN', '').strip()
+PUSHOVER_USER_KEY = os.environ.get('PUSHOVER_USER_KEY', '').strip()
+PUSHOVER_RETRY_SECONDS = max(30, int(os.environ.get('PUSHOVER_RETRY_SECONDS', '30')))        # Pushover cho phép tối thiểu 30 giây
+PUSHOVER_EXPIRE_SECONDS = min(10800, int(os.environ.get('PUSHOVER_EXPIRE_SECONDS', '600')))  # tối đa 3 giờ
+AI_DEFAULT_ENABLED = os.environ.get('AI_DEFAULT_ENABLED', '1').strip().lower() not in ('0', 'false', 'no', 'off')
+ALARM_REPEAT_SECONDS = float(os.environ.get('ALARM_REPEAT_SECONDS', '10'))   # nhắc lại mỗi N giây tới khi có người xác nhận
+ALARM_MAX_MINUTES = float(os.environ.get('ALARM_MAX_MINUTES', '10'))         # nhắc tối đa bao lâu
+
+
+
 DROIDCAM_URL = os.environ.get('DROIDCAM_URL', 'http://192.168.1.101:4747/video')
 FIRE_MODEL_PATH = BASE_DIR / os.environ.get('FIRE_MODEL_PATH', 'model_ai/best.pt')
 FIRE_DETECTION_CONFIDENCE = float(
@@ -169,6 +199,24 @@ FIRE_ALERT_LABELS = {
     for label in os.environ.get('FIRE_ALERT_LABELS', 'fire,smoke').split(',')
     if label.strip()
 }
+
+# Model người (model thứ 2). Mặc định dùng YOLO COCO pretrained, chỉ lấy class "person".
+# Nếu có file model riêng thì đặt đường dẫn trong .env (vd: model_ai/person.pt).
+# Để trống PERSON_MODEL_PATH để tắt phát hiện người.
+_person_model = os.environ.get('PERSON_MODEL_PATH', 'model_ai/person_best.pt').strip()
+if _person_model and (BASE_DIR / _person_model).exists():
+    _person_model = str(BASE_DIR / _person_model)
+PERSON_MODEL_PATH = _person_model
+PERSON_LABELS = {
+    label.strip().lower()
+    for label in os.environ.get('PERSON_LABELS', 'person,human').split(',')
+    if label.strip()
+}
+PERSON_DETECTION_CONFIDENCE = float(os.environ.get('PERSON_DETECTION_CONFIDENCE', '0.5'))
+PERSON_DETECTION_IMAGE_SIZE = int(
+    os.environ.get('PERSON_DETECTION_IMAGE_SIZE', str(FIRE_DETECTION_IMAGE_SIZE))
+)
+
 FIRE_ALERT_COOLDOWN_SECONDS = float(
     os.environ.get('FIRE_ALERT_COOLDOWN_SECONDS', '30')
 )

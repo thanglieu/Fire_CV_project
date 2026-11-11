@@ -6,3 +6,4 @@ numpy
 requests
 PyYAML
 Flask>=2.3
+pywebpush>=2.0

@@ -12,3 +12,15 @@ class AlertLog(models.Model):
     class Meta:
         verbose_name = "Lịch sử cảnh báo"
         verbose_name_plural = "Danh sách lịch sử cảnh báo"
+
+
+class PushSubscription(models.Model):
+    """Một thiết bị (trình duyệt/PWA) đã đăng ký nhận Web Push."""
+    endpoint = models.TextField(unique=True)
+    p256dh = models.CharField(max_length=200)
+    auth = models.CharField(max_length=100)
+    user_agent = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Thiết bị #{self.pk} ({self.user_agent[:40]})"

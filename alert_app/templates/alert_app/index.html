@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FireGuard – Giám sát cháy thông minh</title>
+<link rel="manifest" href="{% url 'manifest' %}">
+<meta name="theme-color" content="#0b0f17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="FireGuard">
+<link rel="apple-touch-icon" href="/static/alert_app/icon-192.png">
 <style>
   :root{
     --bg:#0b0f17; --surface:#121826; --surface-2:#182033; --border:#222c42;
@@ -61,6 +67,9 @@
   #banner{display:none;margin:14px 18px 0;padding:12px 16px;border-radius:12px;font-weight:600;
           background:#ef444422;border:1px solid var(--danger);color:#fecaca}
   #banner.show{display:block}
+  #btnAck{margin-left:10px;cursor:pointer;border:0;border-radius:8px;padding:8px 14px;font:inherit;font-weight:700;
+          background:var(--danger);color:#fff}
+  #btnAck[hidden]{display:none}
   .legend{display:flex;gap:18px;flex-wrap:wrap;padding:14px 18px;color:var(--muted);font-size:13px}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
 
@@ -74,6 +83,26 @@
   .alert-list{display:flex;flex-direction:column;max-height:calc(100vh - 360px);min-height:200px;overflow:auto}
   .alert-item{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);transition:background .15s}
   .alert-item:last-child{border-bottom:0}
+  .alert-link{display:flex;gap:12px;align-items:center;flex:1;min-width:0}
+  .btn-del{flex:none;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--muted);
+           border-radius:8px;padding:6px 10px;font-size:12px;transition:.15s}
+  .btn-del:hover{background:#ef444422;border-color:var(--danger);color:#fecaca}
+  .btn-del:disabled{opacity:.5;cursor:wait}
+  .src-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .src-bar select,.src-bar button{background:var(--surface-2);color:var(--text);border:1px solid var(--border);
+        border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer}
+  .src-bar button:hover,.src-bar select:hover{border-color:var(--accent)}
+  .src-bar button:disabled{opacity:.6;cursor:wait}
+  .src-bar input{background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:8px;
+        padding:6px 10px;font:inherit;font-size:13px;width:170px}
+  .src-bar input:focus{outline:none;border-color:var(--accent)}
+  #btnAi.off{border-color:var(--danger);color:#fecaca}
+  .push-btn{background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:999px;
+            padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+  .push-btn:hover{border-color:var(--accent)} .push-btn:disabled{opacity:.6;cursor:wait}
+  .push-btn.on{border-color:var(--ok);color:#bbf7d0}
+  .push-msg{flex-basis:100%;font-size:12px;color:var(--muted);text-align:right}
+  [hidden]{display:none!important}
   .alert-item:hover{background:var(--surface-2)}
   .alert-item img{width:84px;height:56px;object-fit:cover;border-radius:8px;background:#000;border:1px solid var(--border);flex:none}
   .alert-item .info{flex:1;min-width:0;font-size:13px}
@@ -93,24 +122,42 @@
     <div><h1>FireGuard</h1><small>Giám sát &amp; cảnh báo cháy tự động</small></div>
   </div>
   <div class="pills">
+    <button type="button" class="push-btn" id="btnSiren">🔇 Còi: TẮT</button>
+    <button type="button" class="push-btn" id="btnPush">🔔 Bật thông báo</button>
+    <button type="button" class="push-btn" id="btnPushTest" hidden>Gửi thử</button>
     <span class="pill" id="pCam"><i class="dot"></i><span>Camera…</span></span>
     <span class="pill" id="pAi"><i class="dot"></i><span>AI…</span></span>
     <span class="pill"><i class="dot"></i><span id="clock">--:--:--</span></span>
+    <span class="push-msg" id="pushMsg"></span>
   </div>
 </header>
 
 <main>
   <!-- ===== Video trực tiếp ===== -->
   <section class="card" id="videoCard">
-    <div class="card-head"><span>Camera trực tiếp · DroidCam</span><span class="pill" id="pFps"><span>-- fps</span></span></div>
+    <div class="card-head">
+      <span class="src-bar">
+        <select id="srcMode" title="Nguồn đầu vào">
+          <option value="camera">📷 DroidCam (trực tiếp)</option>
+          <option value="video">🎞 Video (tải lên)</option>
+          <option value="image">🖼 Ảnh (tải lên)</option>
+        </select>
+        <input type="text" id="camIp" placeholder="IP, vd 192.168.1.5:4747" autocomplete="off" spellcheck="false" inputmode="url">
+        <button type="button" id="btnConnect">🔌 Kết nối</button>
+        <button type="button" id="btnPick" hidden>📁 Chọn video…</button>
+        <input type="file" id="fileInput" hidden>
+        <button type="button" id="btnAi" title="Tắt AI để đỡ tốn CPU/GPU khi chưa cần">⏸ Dừng AI</button>
+      </span>
+      <span class="pill" id="pFps"><span>-- fps</span></span>
+    </div>
     <div class="video-wrap" id="videoWrap">
       <img id="video" src="{% url 'video_feed' %}" alt="Camera stream">
       <div class="overlay top">
-        <span class="chip live">LIVE</span>
+        <span class="chip live" id="chipLive">LIVE</span>
         <button class="chip" id="btnFull" type="button">⛶ Toàn màn hình</button>
       </div>
     </div>
-    <div id="banner">🚨 PHÁT HIỆN LỬA / KHÓI – hãy kiểm tra hiện trường ngay!</div>
+    <div id="banner">🚨 PHÁT HIỆN LỬA / KHÓI – hãy kiểm tra hiện trường ngay! <button type="button" id="btnAck" hidden>🔕 Đã xem – tắt chuông</button></div>
     <div class="legend">
       <span><i style="background:#ef4444"></i>Lửa (fire)</span>
       <span><i style="background:#b4b4b4"></i>Khói (smoke)</span>
@@ -130,7 +177,18 @@
       <div class="card-head">Lịch sử cảnh báo gần đây</div>
       <div class="alert-list" id="alertList">
         {% for alert in recent_alerts %}
-        <a class="alert-item" href="{{ alert.image_evidence.url }}" target="_blank" rel="noopener">
+        <div class="alert-item">
+          <a class="alert-link" href="{{ alert.image_evidence.url }}" target="_blank" rel="noopener">
+            <img src="{{ alert.image_evidence.url }}" alt="Ảnh cảnh báo" loading="lazy">
+            <div class="info">
+              <div class="when">{{ alert.timestamp|date:"H:i:s · d/m/Y" }}</div>
+              {% widthratio alert.confidence 1 100 as pct %}
+              <div class="sub">Độ tin cậy {{ pct }}%</div>
+              <div class="bar"><div style="width:{{ pct }}%"></div></div>
+            </div>
+          </a>
+          <button type="button" class="btn-del" data-url="{% url 'delete_alert' alert.pk %}" title="Xóa cảnh báo này">🗑 Xóa</button>
+        </div>
           <img src="{{ alert.image_evidence.url }}" alt="Ảnh cảnh báo" loading="lazy">
           <div class="info">
             <div class="when">{{ alert.timestamp|date:"H:i:s · d/m/Y" }}</div>
@@ -184,6 +242,23 @@
     } catch (e) {}
   }
 
+    // Nút xóa ảnh cảnh báo (gắn vào #alertList nên vẫn chạy sau khi danh sách được làm mới)
+  const CSRF = '{{ csrf_token }}';
+  $('alertList').addEventListener('click', async e => {
+    const btn = e.target.closest('.btn-del');
+    if (!btn) return;
+    if (!confirm('Xóa cảnh báo này? Ảnh bằng chứng cũng sẽ bị xóa.')) return;
+    btn.disabled = true;
+    try {
+      const res = await fetch(btn.dataset.url, {method: 'POST', headers: {'X-CSRFToken': CSRF}});
+      if (!res.ok) throw new Error(res.status);
+      refreshAlerts();
+    } catch (err) {
+      btn.disabled = false;
+      alert('Không xóa được, thử lại sau.');
+    }
+  });
+
   // Khớp tỉ lệ khung với camera thật
   function fitRatio() {
     if (video.naturalWidth > 0) {
@@ -192,24 +267,293 @@
   }
   video.addEventListener('load', fitRatio);
 
+  // ===== Chọn nguồn: DroidCam / Video / Ảnh =====
+  const sel = $('srcMode'), btnPick = $('btnPick'), fileInput = $('fileInput'), chip = $('chipLive');
+  const camIp = $('camIp'), btnConnect = $('btnConnect'), btnAi = $('btnAi');
+  const shortUrl = u => (u || '').replace(/^https?:\/\//, '').replace(/\/video$/, '');
+  let imgMode = false, synced = false;
+
+  function applyMode(mode) {
+    chip.textContent = {camera: 'LIVE', video: 'VIDEO', image: 'ẢNH'}[mode] || 'LIVE';
+    chip.classList.toggle('live', mode === 'camera');
+    btnPick.hidden = mode === 'camera';
+    camIp.hidden = btnConnect.hidden = mode !== 'camera';
+    fileInput.accept = mode === 'image' ? 'image/*' : 'video/*';
+    btnPick.textContent = mode === 'image' ? '📁 Chọn ảnh…' : '📁 Chọn video…';
+  }
+  async function post(url, form) {
+    const res = await fetch(url, {method: 'POST', headers: {'X-CSRFToken': CSRF}, body: form});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || ('Lỗi ' + res.status));
+    return data;
+  }
+  function showStream() {                 // hiện lại luồng trực tiếp / video
+    imgMode = false;
+    video.src = FEED + '?t=' + Date.now();
+  }
+
+  sel.addEventListener('change', async () => {
+    const mode = sel.value;
+    applyMode(mode);
+    if (mode === 'camera') {
+      try {
+        const f = new FormData(); f.append('mode', 'camera'); f.append('ip', camIp.value);
+        await post('{% url "set_source" %}', f);
+        showStream();
+      } catch (err) { alert(err.message); }
+    } else {
+      fileInput.value = '';
+      fileInput.click();                  // mở hộp thoại chọn file ngay
+    }
+  });
+  btnPick.onclick = () => { fileInput.value = ''; fileInput.click(); };
+
+  // Nhập IP DroidCam trên giao diện rồi bấm Kết nối (không cần sửa .env)
+  async function connectCamera() {
+    btnConnect.disabled = true; btnConnect.textContent = '⏳ Đang kết nối…';
+    try {
+      const f = new FormData(); f.append('mode', 'camera'); f.append('ip', camIp.value);
+      await post('{% url "set_source" %}', f);
+      showStream();
+    } catch (err) { alert(err.message); }
+    btnConnect.disabled = false; btnConnect.textContent = '🔌 Kết nối';
+  }
+  btnConnect.onclick = connectCamera;
+  camIp.addEventListener('keydown', e => { if (e.key === 'Enter') connectCamera(); });
+
+  // Nút dừng / chạy AI
+  function renderAi(on) {
+    btnAi.textContent = on ? '⏸ Dừng AI' : '▶ Chạy AI';
+    btnAi.classList.toggle('off', !on);
+    btnAi.dataset.on = on ? '1' : '0';
+  }
+  btnAi.onclick = async () => {
+    btnAi.disabled = true;
+    try {
+      const f = new FormData(); f.append('enabled', btnAi.dataset.on === '1' ? '0' : '1');
+      renderAi((await post('{% url "ai_toggle" %}', f)).ai_enabled);
+    } catch (err) { alert(err.message); }
+    btnAi.disabled = false;
+  };
+  renderAi(true);
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const mode = sel.value;
+    const form = new FormData();
+    form.append('file', file);
+    btnPick.disabled = true; btnPick.textContent = '⏳ Đang xử lý…';
+    try {
+      if (mode === 'video') {
+        form.append('mode', 'video');
+        await post('{% url "set_source" %}', form);
+        showStream();
+      } else {
+        const r = await post('{% url "analyze_image" %}', form);
+        imgMode = true;
+        video.src = r.image;
+        setPill($('pAi'), true, r.detected.length ? 'AI: ' + r.detected.join(', ') : 'AI: không phát hiện gì');
+        card.classList.toggle('alarm', r.fire);
+        $('banner').classList.toggle('show', r.fire);
+        if (r.fire) refreshAlerts();
+      }
+    } catch (err) { alert(err.message); }
+    btnPick.disabled = false;
+    applyMode(mode);
+  });
+
+  // ===== Còi báo động liên tục + xác nhận "đã xem" =====
+  const btnAck = $('btnAck'), btnSiren = $('btnSiren');
+  let ac = null, osc = null, sirenTimer = null, wakeLock = null, alarmOn = false, ackedAt = 0;
+  let armed = localStorage.getItem('siren') === '1';
+
+  function unlockAudio() {                // trình duyệt chỉ cho phát âm thanh sau khi người dùng đã chạm vào trang
+    if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+    if (ac.state === 'suspended') ac.resume();
+  }
+  function startSiren() {
+    if (!armed || sirenTimer) return;
+    unlockAudio();
+    osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'square'; gain.gain.value = 0.7;
+    osc.connect(gain); gain.connect(ac.destination); osc.start();
+    let hi = false;
+    const tick = () => { osc.frequency.setValueAtTime(hi ? 1000 : 700, ac.currentTime); hi = !hi; };
+    tick(); sirenTimer = setInterval(tick, 450);
+    if (navigator.wakeLock) navigator.wakeLock.request('screen').then(l => wakeLock = l).catch(() => {});  // giữ màn hình sáng
+  }
+  function stopSiren() {
+    if (sirenTimer) { clearInterval(sirenTimer); sirenTimer = null; }
+    if (osc) { try { osc.stop(); } catch (e) {} osc = null; }
+    if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+  }
+  function setAlarm(active) {
+    if (Date.now() - ackedAt < 2500) active = false;     // vừa bấm xem, bỏ qua kết quả poll cũ
+    alarmOn = active;
+    btnAck.hidden = !active;
+    if (active) $('banner').classList.add('show');
+    active ? startSiren() : stopSiren();
+  }
+  async function ack() {                  // người dùng đã xem -> dừng còi và dừng nhắc lặp ở server
+    ackedAt = Date.now();
+    alarmOn = false; btnAck.hidden = true; stopSiren();
+    try { await fetch('{% url "alarm_ack" %}', {method: 'POST', headers: {'X-CSRFToken': CSRF}}); } catch (e) {}
+  }
+  function renderSiren() {
+    btnSiren.classList.toggle('on', armed);
+    btnSiren.textContent = armed ? '🔊 Còi: BẬT' : '🔇 Còi: TẮT';
+  }
+  btnSiren.onclick = () => {
+    armed = !armed; localStorage.setItem('siren', armed ? '1' : '0'); renderSiren();
+    if (armed) { startSiren(); setTimeout(() => { if (!alarmOn) stopSiren(); }, 700); }   // kêu thử 0,7s để kiểm tra âm lượng
+    else stopSiren();
+  };
+  document.addEventListener('pointerdown', () => { if (armed) unlockAudio(); });   // sau khi tải lại trang, chạm 1 lần là còi hoạt động lại
+  btnAck.onclick = ack;
+  renderSiren();
+
+  // Bấm vào thông báo trên điện thoại: mở trang với ?ack=1 (hoặc trang đang mở nhận tin nhắn từ service worker)
+  if (new URLSearchParams(location.search).has('ack')) { ack(); history.replaceState(null, '', location.pathname); }
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.type === 'ack') ack(); });
+  }
+
   // Hỏi trạng thái mỗi giây
   async function poll() {
     try {
       const s = await (await fetch('{% url "stream_status" %}', {cache: 'no-store'})).json();
-      setPill($('pCam'), s.connected, s.connected ? 'Camera đang kết nối' : 'Mất kết nối camera');
-      setPill($('pAi'), true, s.detected.length ? 'AI: ' + s.detected.join(', ') : 'AI: bình thường');
-      $('pFps').firstElementChild.textContent = s.fps + ' fps';
+      if (!synced) { sel.value = s.mode; camIp.value = shortUrl(s.camera_url); applyMode(s.mode); synced = true; }   // đồng bộ khi mới mở trang
+      renderAi(s.ai_enabled);
+      const isVideo = s.mode === 'video';
+      setPill($('pCam'), s.connected, s.connected
+        ? (isVideo ? 'Đang phát video' : 'Camera đang kết nối')
+        : (isVideo ? 'Đang mở video…' : 'Đang kết nối camera…'));
       $('sInfer').textContent = s.infer_ms;
-      card.classList.toggle('alarm', s.fire);
-      $('banner').classList.toggle('show', s.fire);
+      if (!imgMode) {                     // đang xem ảnh tĩnh thì không ghi đè kết quả của ảnh
+        const aiText = s.ai_error ? 'AI lỗi: ' + s.ai_error
+          : s.ai_loading ? 'AI: đang tải model…'
+          : !s.ai_enabled ? 'AI: đã tắt'
+          : (s.detected.length ? 'AI: ' + s.detected.join(', ') : 'AI: bình thường');
+        setPill($('pAi'), s.ai_enabled && !s.ai_error, aiText);
+        $('pFps').firstElementChild.textContent = s.fps + ' fps';
+        card.classList.toggle('alarm', s.fire);
+        $('banner').classList.toggle('show', s.fire);
+      }
       if (lastAlerts !== null && s.alerts_sent > lastAlerts) refreshAlerts();
       lastAlerts = s.alerts_sent;
+      setAlarm(!!s.alarm_active);
       fitRatio();
     } catch (e) {
       setPill($('pCam'), false, 'Không liên lạc được server');
     }
   }
   poll(); setInterval(poll, 1000);
+})();
+</script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const btn = $('btnPush'), btnTest = $('btnPushTest'), msg = $('pushMsg');
+  const URLS = {
+    key: '{% url "push_public_key" %}', sub: '{% url "push_subscribe" %}',
+    unsub: '{% url "push_unsubscribe" %}', test: '{% url "push_test" %}'
+  };
+  const CSRF_TOKEN = '{{ csrf_token }}';
+  const say = t => { msg.textContent = t || ''; };
+
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+
+  function unsupportedReason() {
+    if (!window.isSecureContext) return 'Cần mở trang bằng địa chỉ https (link ngrok) mới bật được thông báo.';
+    if (isIOS && !standalone) return 'iPhone: bấm nút Chia sẻ → "Thêm vào MH chính", rồi mở FireGuard từ biểu tượng đó.';
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window))
+      return 'Trình duyệt này không hỗ trợ thông báo đẩy. Hãy dùng Chrome (Android) hoặc Safari 16.4+ (iPhone).';
+    return '';
+  }
+
+  const b64ToU8 = b64 => {
+    const pad = '='.repeat((4 - b64.length % 4) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, c => c.charCodeAt(0));
+  };
+  const post = (url, body) => fetch(url, {
+    method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN},
+    body: JSON.stringify(body || {})
+  });
+
+  function render(subscribed) {
+    btn.classList.toggle('on', subscribed);
+    btn.textContent = subscribed ? '🔔 Đã bật · Tắt' : '🔔 Bật thông báo';
+    btnTest.hidden = !subscribed;
+  }
+
+  async function currentSub() {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    return {reg, sub: await reg.pushManager.getSubscription()};
+  }
+
+  async function enable() {
+    const why = unsupportedReason();
+    if (why) return say(why);
+    btn.disabled = true; say('Đang bật…');
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return say('Bạn chưa cho phép thông báo. Vào cài đặt trình duyệt/trang web để cho phép rồi thử lại.');
+      const info = await (await fetch(URLS.key)).json();
+      if (!info.configured) return say('Server chưa có khóa VAPID (xem hướng dẫn generate_vapid_keys).');
+      let {reg, sub} = await currentSub();
+      if (!sub) {
+        try {
+          sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64ToU8(info.key)});
+        } catch (e) {                       // khóa VAPID đã đổi: hủy đăng ký cũ rồi đăng ký lại
+          const old = await reg.pushManager.getSubscription();
+          if (old) await old.unsubscribe();
+          sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64ToU8(info.key)});
+        }
+      }
+      const res = await post(URLS.sub, sub.toJSON());
+      if (!res.ok) throw new Error('Server từ chối đăng ký (' + res.status + ')');
+      render(true); say('Đã bật. Bấm "Gửi thử" để kiểm tra.');
+    } catch (e) {
+      say('Không bật được: ' + (e.message || e));
+    } finally { btn.disabled = false; }
+  }
+
+  async function disable() {
+    btn.disabled = true;
+    try {
+      const {sub} = await currentSub();
+      if (sub) { await post(URLS.unsub, {endpoint: sub.endpoint}); await sub.unsubscribe(); }
+      render(false); say('Đã tắt thông báo trên thiết bị này.');
+    } catch (e) { say('Không tắt được: ' + (e.message || e)); }
+    finally { btn.disabled = false; }
+  }
+
+  btn.onclick = () => btn.classList.contains('on') ? disable() : enable();
+
+  btnTest.onclick = async () => {
+    btnTest.disabled = true; say('Đang gửi thử…');
+    try {
+      const d = await (await post(URLS.test)).json();
+      say(d.ok ? 'Đã gửi tới ' + d.sent + '/' + d.total + ' thiết bị. Chờ vài giây.' : (d.error || 'Không gửi được, xem log server.'));
+    } catch (e) { say('Lỗi: ' + (e.message || e)); }
+    finally { btnTest.disabled = false; }
+  };
+
+  // Khi mở trang: nếu đã cho phép từ trước thì đồng bộ trạng thái (và đăng ký lại lên server nếu DB bị xóa)
+  (async () => {
+    const why = unsupportedReason();
+    if (why) { say(why); return; }
+    if (Notification.permission !== 'granted') return;
+    try {
+      const {sub} = await currentSub();
+      if (sub) { await post(URLS.sub, sub.toJSON()); render(true); }
+    } catch (e) {}
+  })();
 })();
 </script>
 </body>
